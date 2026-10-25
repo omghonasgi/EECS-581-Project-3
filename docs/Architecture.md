@@ -76,7 +76,7 @@ The app stores personal photos and locations, so each user's data is private by 
 
 ## **Sprint 1 Requirements Artifacts**
 
-Sprint 1 includes requirements 1, 2, 3, 4, 5, 6, 10, 18, and 19, for a total of 44 story points across 6 team members. Each artifact below lists the acceptance criteria and the steps a GTA can follow to confirm the requirement is complete.
+Sprint 1 includes requirements 1, 2, 3, 4, 5, 6, for a total of 30 story points across 6 team members. Each artifact below lists the acceptance criteria.
 
 ### **Requirement 1: Create an account and log in (8 points)**
 
@@ -132,33 +132,5 @@ Sprint 1 includes requirements 1, 2, 3, 4, 5, 6, 10, 18, and 19, for a total of 
 
 > * The form includes a notes field that accepts up to 2,000 characters, with a visible character count.  
 > * Saved notes appear on the experience with line breaks preserved.
-
-### **Requirement 10: Persistent storage of user data (8 points)**
-
-**User story:** As a traveler, I want my trips saved so that they are still there next time I log in.  
-**Acceptance criteria:**
-
-> * The MySQL database includes users, experiences and photos tables linked as shown in Figure 2\.  
-> * Experiences, photos, ratings and notes remain after logging out, restarting the server and logging back in.  
-> * Each user sees only their own experiences.
-
-### **Requirement 18: Highlight visited countries and states (3 points)**
-
-**User story:** As a traveler, I want the countries and states I have visited to be shaded so that I can see my travel coverage.  
-**Acceptance criteria:**
-
-> * Any country or U.S. state containing at least one of the user's experiences is filled with the highlight color.  
-> * Adding the first experience in a new country highlights it immediately, without a page refresh.  
-> * Countries with no experiences keep the default color.
-
-### **Requirement 19: Click a country or state to zoom in (3 points)**
-
-**User story:** As a traveler, I want to click a country or state to zoom into it so that I can see my experiences there in detail.  
-**Acceptance criteria:**
-
-> * Clicking a country zooms and centers the map so the whole country fills the view.  
-> * Clicking a U.S. state while zoomed into the United States zooms into that state.  
-> * A "Back to world" button returns to the full world view.
-
 
 
