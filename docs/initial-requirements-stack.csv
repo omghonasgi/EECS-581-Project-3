@@ -1,7 +1,7 @@
 Requirement ID,Description,Story Points,Priority,Sprint Number
-1,User can create an account and log in to the travel app,8,1,
-2,User can explore a map-like interface of travel locations around the world,8,1,
-3,User can place an experience they have had as a marker on the map,5,1,
+1,User can create an account and log in to the travel app,8,1,1
+2,User can explore a map-like interface of travel locations around the world,8,1,1
+3,User can place an experience they have had as a marker on the map,5,1,1
 4,User can attach one or more pictures to an experience,5,1,
 5,User can rate an experience out of 5 stars,2,1,
 6,User can add personal notes to an experience,2,1,
