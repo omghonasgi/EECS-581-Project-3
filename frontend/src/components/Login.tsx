@@ -166,7 +166,7 @@ export default function Login() {
             placeholder={
               isRegistering ? "At least 8 characters" : "Enter your password"
             }
-            minLength={8}
+            minLength={isRegistering ? 8 : undefined}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
