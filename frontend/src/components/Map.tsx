@@ -12,7 +12,7 @@
 // Leave this component empty for now so each developer can fill in their part.
 
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 
@@ -91,7 +91,16 @@ export default function Map() {
         <MapInteraction isAdding={isAdding} onLocationSelect={handleMapClick} />
         
         {experiences.map((exp, idx) => (
-          <Marker key={idx} position={[exp.lat, exp.lng]} />
+          <Marker key={idx} position={[exp.lat, exp.lng]}>
+            {/* Show saved title, rating, and notes when a marker is clicked */}
+            <Popup>
+              <strong>{exp.title}</strong>
+              <div style={{ color: '#f59e0b', fontSize: '1.1rem' }}>
+                {exp.rating ? '★'.repeat(exp.rating) + '☆'.repeat(5 - exp.rating) : 'Not rated'}
+              </div>
+              {exp.notes && <p style={{ whiteSpace: 'pre-wrap', margin: '0.5rem 0 0' }}>{exp.notes}</p>}
+            </Popup>
+          </Marker>
         ))}
       </MapContainer>
     </div>

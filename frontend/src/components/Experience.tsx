@@ -28,13 +28,27 @@ export default function Experience() {
 
   const [title, setTitle] = useState('');
   const [error, setError] = useState('');
+  const [rating, setRating] = useState(0); // 0 = not rated yet
+  const [notes, setNotes] = useState('');
+  const MAX_NOTES = 2000;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validation error if missing title
     if (!title.trim()) {
       setError('Title is required to save this experience.');
+      return;
+    }
+
+    // Reject any rating outside 1-5 (0 means the user left it unrated)
+    if (rating !== 0 && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+      setError('Rating must be between 1 and 5 stars.');
+      return;
+    }
+
+    if (notes.length > MAX_NOTES) {
+      setError(`Notes cannot be longer than ${MAX_NOTES} characters.`);
       return;
     }
 
@@ -47,8 +61,8 @@ export default function Experience() {
       state,
       // Stubs for other team members' data
       photos: [],
-      rating: null,
-      notes: ''
+      rating: rating || null,
+      notes
     };
 
     // Save to local storage to satisfy the refresh persistence requirement
@@ -92,8 +106,39 @@ export default function Experience() {
         </div>
 
         {/* Axel Bengoa - Ratings and Notes Scope */}
-        <div style={{ padding: '1.5rem', border: '2px dashed #cbd5e1', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' }}>
-          <p style={{ margin: 0 }}>[Axel: Attach 5-Star Rating & Notes Component Here]</p>
+        <div>
+          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem', color: '#334155' }}>Rating</label>
+          <div>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRating(star)}
+                aria-label={`${star} star${star > 1 ? 's' : ''}`}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '2rem', padding: '0 0.15rem', color: star <= rating ? '#f59e0b' : '#cbd5e1' }}
+              >
+                ★
+              </button>
+            ))}
+            <span style={{ marginLeft: '0.5rem', color: '#64748b', fontSize: '0.9rem' }}>
+              {rating ? `${rating} / 5` : 'Not rated'}
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem', color: '#334155' }}>Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={MAX_NOTES}
+            rows={6}
+            placeholder="What did you do there?"
+            style={{ width: '100%', padding: '0.85rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '1rem', fontFamily: 'inherit', resize: 'vertical' }}
+          />
+          <p style={{ margin: '0.25rem 0 0', textAlign: 'right', fontSize: '0.85rem', color: notes.length >= MAX_NOTES ? '#991b1b' : '#64748b' }}>
+            {notes.length} / {MAX_NOTES}
+          </p>
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
