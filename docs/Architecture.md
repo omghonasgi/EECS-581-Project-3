@@ -133,4 +133,78 @@ Sprint 1 includes requirements 1, 2, 3, 4, 5, 6, for a total of 30 story points 
 > * The form includes a notes field that accepts up to 2,000 characters, with a visible character count.  
 > * Saved notes appear on the experience with line breaks preserved.
 
+## **Sprint 2 Requirements Artifacts**
 
+Sprint 2 includes requirements 7, 8, 9, 10, 11, 12, and 13, for a total of 23 story points across 6 team members. Each artifact below lists the acceptance criteria.
+
+### **Requirement 7: View experience details (3 points)**
+
+**User story:** As a traveler, I want to select an experience on the map and view its details so that I can see its pictures, rating, and notes.  
+**Acceptance criteria:**
+
+> * Selecting an experience marker opens a details view for that experience.
+> * The details view shows all pictures attached to the experience, including a way to view each picture clearly.
+> * The details view shows the saved rating out of 5 stars and the experience's notes.
+> * Only the signed-in user's experiences are available in the details view.
+
+### **Requirement 8: Edit an existing experience (3 points)**
+
+**User story:** As a traveler, I want to edit an experience on the map so that I can correct or update its details.  
+**Acceptance criteria:**
+
+> * The details view provides an edit action for an experience owned by the signed-in user.
+> * The edit form is prefilled with the experience's current location, pictures, rating, and notes.
+> * Saving valid changes updates the existing experience without creating a duplicate marker.
+> * The updated details are shown when the experience is selected again or the page is refreshed.
+
+### **Requirement 9: Delete an existing experience (2 points)**
+
+**User story:** As a traveler, I want to delete an experience from the map so that I can remove trips I no longer want to keep.  
+**Acceptance criteria:**
+
+> * The details view provides a delete action for an experience owned by the signed-in user.
+> * Deleting an experience requires confirmation before the experience is removed.
+> * After confirmation, the experience marker and its associated details are removed from the map and details view.
+> * A deleted experience does not reappear after the page is refreshed.
+
+### **Requirement 10: Persist experience data (8 points)**
+
+**User story:** As a traveler, I want my experiences and their pictures, ratings, and notes to be stored persistently so that my travel history is available when I return.  
+**Acceptance criteria:**
+
+> * Saving an experience stores its location, pictures, rating, and notes in persistent storage associated with the signed-in user.
+> * The user's saved experiences and complete details are restored after signing out and signing back in.
+> * Data remains available after the application is closed and reopened.
+> * Each user can access, edit, and delete only their own stored experiences.
+
+### **Requirement 11: Filter or search experiences (3 points)**
+
+**User story:** As a traveler, I want to filter or search my experiences by location or rating so that I can quickly find a specific trip.  
+**Acceptance criteria:**
+
+> * The map provides controls to search experiences by location and filter experiences by rating.
+> * A location search returns only the signed-in user's experiences matching the entered location.
+> * A rating filter supports ratings from 1 through 5 stars and returns only experiences meeting the selected rating.
+> * Clearing the search or filter restores all of the signed-in user's experiences.
+> * Applying a search or filter does not modify or delete any experience data.
+
+### **Requirement 12: Log out of the travel app (1 point)**
+
+**User story:** As a traveler, I want to log out of the travel app so that my account and experiences remain private on a shared device.  
+**Acceptance criteria:**
+
+> * A visible logout action is available while the user is signed in.
+> * Selecting logout ends the current session and returns the user to the login page.
+> * After logging out, protected map and experience pages cannot be accessed through navigation or a direct URL.
+> * A different user must log in before any saved experiences can be viewed.
+
+### **Requirement 13: Update account profile information (3 points)**
+
+**User story:** As a traveler, I want to update my account profile information so that my account details stay current.  
+**Acceptance criteria:**
+
+> * The signed-in user can open a profile settings view and edit their supported account information.
+> * The profile form is prefilled with the user's current information.
+> * Saving valid changes updates the user's profile and shows a success confirmation.
+> * Invalid or incomplete information is rejected with a clear validation message, and the previous profile information is preserved.
+> * Updated profile information remains available after the user signs out and signs back in.
