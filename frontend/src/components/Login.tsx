@@ -16,17 +16,19 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../index.css";
 
-type User = {
-  username: string;
-  email: string;
-  password: string;
-};
-
-const USERS_KEY = "triptrace_users";
+const API_URL = "http://localhost:3001/api";
 const CURRENT_USER_KEY = "triptrace_current_user";
+// Login token. Send it on requests that need a logged-in user:
+//   headers: { Authorization: `Bearer ${localStorage.getItem("triptrace_token")}` }
+const TOKEN_KEY = "triptrace_token";
 
-function getUsers(): User[] {
-  return JSON.parse(localStorage.getItem(USERS_KEY) ?? "[]") as User[];
+async function post(path: string, body: object) {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { ok: res.ok, data: await res.json() };
 }
 
 export default function Login() {
@@ -39,81 +41,62 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
     setIsError(false);
 
-    const users = getUsers();
+    try {
+      if (isRegistering) {
+        if (!username.trim() || !email.trim() || !password) {
+          setMessage("Username, email, and password are required.");
+          setIsError(true);
+          return;
+        }
 
-    if (isRegistering) {
-      if (!username.trim() || !email.trim() || !password) {
-        setMessage("Username, email, and password are required.");
+        if (password.length < 8) {
+          setMessage("Password must be at least 8 characters.");
+          setIsError(true);
+          return;
+        }
+
+        // The server checks for a duplicate username or email.
+        const { ok, data } = await post("/register", { username, email, password });
+
+        if (!ok) {
+          setMessage(data.error);
+          setIsError(true);
+          return;
+        }
+
+        setUsername("");
+        setEmail("");
+        setPassword("");
+        setIsRegistering(false);
+        setMessage("Account created. You can now log in.");
+        setIsError(false);
+        return;
+      }
+
+      const { ok, data } = await post("/login", { username, password });
+
+      if (!ok) {
+        setMessage(data.error);
         setIsError(true);
         return;
       }
 
-      if (password.length < 8) {
-        setMessage("Password must be at least 8 characters.");
-        setIsError(true);
-        return;
-      }
-
-      const usernameTaken = users.some(
-        (user) => user.username.toLowerCase() === username.trim().toLowerCase()
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(
+        CURRENT_USER_KEY,
+        JSON.stringify({ username: data.user.username })
       );
 
-      if (usernameTaken) {
-        setMessage("That username is already taken.");
-        setIsError(true);
-        return;
-      }
-
-      const emailTaken = users.some(
-        (user) => user.email.toLowerCase() === email.trim().toLowerCase()
-      );
-
-      if (emailTaken) {
-        setMessage("That email is already registered.");
-        setIsError(true); 
-        return;
-      }
-
-      const newUser: User = {
-        username: username.trim(),
-        email: email.trim(),
-        password,
-      };
-
-      localStorage.setItem(USERS_KEY, JSON.stringify([...users, newUser]));
-
-      setUsername("");
-      setEmail("");
-      setPassword("");
-      setIsRegistering(false);
-      setMessage("Account created. You can now log in.");
-      setIsError(false);
-      return;
-    }
-
-    const matchingUser = users.find(
-      (user) =>
-        user.username.toLowerCase() === username.trim().toLowerCase() &&
-        user.password === password
-    );
-
-    if (!matchingUser) {
-      setMessage("Invalid username or password");
+      navigate("/map");
+    } catch {
+      setMessage("Can't reach the server. Is the backend running?");
       setIsError(true);
-      return;
     }
-
-    localStorage.setItem(
-      CURRENT_USER_KEY,
-      JSON.stringify({ username: matchingUser.username })
-    );
-
-    navigate("/map");
   }
 
   return (

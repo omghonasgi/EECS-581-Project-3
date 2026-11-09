@@ -1,0 +1,14 @@
+-- TripTrace users table (Requirement 1).
+-- Usernames and emails must be unique (case-insensitive).
+-- Only the bcrypt hash of a password is stored, never the password itself.
+
+CREATE DATABASE IF NOT EXISTS triptrace;
+USE triptrace;
+
+CREATE TABLE IF NOT EXISTS users (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  username      VARCHAR(50)  NOT NULL UNIQUE,
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  password_hash CHAR(60)     NOT NULL,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
