@@ -16,8 +16,12 @@
 //
 // Leave this component empty for now so each developer can fill in their part.
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { savePhotos } from '../photoStore';
+
+const PHOTO_TYPES = ['image/jpeg', 'image/png'];
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export default function Experience() {
   const location = useLocation();
@@ -31,8 +35,36 @@ export default function Experience() {
   const [rating, setRating] = useState(0); // 0 = not rated yet
   const [notes, setNotes] = useState('');
   const MAX_NOTES = 2000;
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoError, setPhotoError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  // Thumbnail URLs for the selected photos, released when the selection changes
+  const previews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos]);
+  useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    // Clear the input so the same file can be picked again after removing it
+    e.target.value = '';
+
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    files.forEach((file) => {
+      if (!PHOTO_TYPES.includes(file.type)) {
+        rejected.push(`${file.name} is not a JPEG or PNG`);
+      } else if (file.size > MAX_PHOTO_BYTES) {
+        rejected.push(`${file.name} is larger than 10 MB`);
+      } else {
+        accepted.push(file);
+      }
+    });
+
+    setPhotos([...photos, ...accepted]);
+    setPhotoError(rejected.length ? `Rejected: ${rejected.join('; ')}.` : '');
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validation error if missing title
@@ -52,15 +84,28 @@ export default function Experience() {
       return;
     }
 
+    const id = Date.now();
+
+    // Store each photo tied to this experience before saving the experience
+    let photoIds: number[] = [];
+    setSaving(true);
+    try {
+      photoIds = await savePhotos(id, photos);
+    } catch (err) {
+      console.error('Saving photos failed', err);
+      setPhotoError('Could not save photos. Please try again.');
+      setSaving(false);
+      return;
+    }
+
     const newExperience = {
-      id: Date.now(),
+      id,
       title,
       lat,
       lng,
       country,
       state,
-      // Stubs for other team members' data
-      photos: [],
+      photos: photoIds,
       rating: rating || null,
       notes
     };
@@ -101,8 +146,38 @@ export default function Experience() {
         </div>
 
         {/* Marcos Lepage - Photo Upload Scope */}
-        <div style={{ padding: '1.5rem', border: '2px dashed #cbd5e1', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' }}> 
-          <p style={{ margin: 0 }}>[Marcos: Attach JPEG/PNG Upload Component Here]</p>
+        <div>
+          <label htmlFor="photos" style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem', color: '#334155' }}>Photos</label>
+          <label htmlFor="photos" style={{ display: 'block', padding: '1.25rem', border: '2px dashed #cbd5e1', borderRadius: '8px', textAlign: 'center', color: '#64748b', cursor: 'pointer' }}>
+            Choose photos (JPEG or PNG, up to 10 MB each)
+          </label>
+          <input
+            id="photos"
+            type="file"
+            accept="image/jpeg,image/png"
+            multiple
+            onChange={handlePhotoSelect}
+            style={{ display: 'none' }}
+          />
+          {photoError && <p style={{ color: '#991b1b', margin: '0.5rem 0 0', fontSize: '0.85rem', fontWeight: 'bold' }}>{photoError}</p>}
+
+          {previews.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+              {previews.map((url, idx) => (
+                <div key={url} style={{ position: 'relative' }}>
+                  <img src={url} alt={photos[idx].name} style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '6px', display: 'block' }} />
+                  <button
+                    type="button"
+                    onClick={() => setPhotos(photos.filter((_, i) => i !== idx))}
+                    aria-label={`Remove ${photos[idx].name}`}
+                    style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', borderRadius: '50%', border: 'none', background: 'rgba(15, 23, 42, 0.7)', color: 'white', cursor: 'pointer', lineHeight: '22px', padding: 0 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Axel Bengoa - Ratings and Notes Scope */}
@@ -142,8 +217,8 @@ export default function Experience() {
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-          <button type="submit" style={{ flex: 1, padding: '0.9rem', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
-            Save Experience
+          <button type="submit" disabled={saving} style={{ flex: 1, padding: '0.9rem', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', cursor: saving ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '1rem', opacity: saving ? 0.7 : 1 }}>
+            {saving ? 'Saving...' : 'Save Experience'}
           </button>
           <button type="button" onClick={() => navigate('/map')} style={{ flex: 1, padding: '0.9rem', background: 'transparent', color: '#0f766e', border: '2px solid #0f766e', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}>
             Cancel
