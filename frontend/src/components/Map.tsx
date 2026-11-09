@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
+import { getPhotos } from '../photoStore';
 
 // Fix for default Leaflet marker icons not loading correctly in React
 import L from 'leaflet';
@@ -26,6 +27,41 @@ L.Marker.prototype.options.icon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41]
 });
+
+// Loads an experience's saved photos from IndexedDB and shows them as thumbnails.
+// Popup content only mounts while the popup is open, so photos load on demand.
+function ExperiencePhotos({ experienceId }: { experienceId: number }) {
+  const [urls, setUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    let created: string[] = [];
+    let cancelled = false;
+    getPhotos(experienceId)
+      .then((photos) => {
+        created = photos.map((photo) => URL.createObjectURL(photo.blob));
+        if (cancelled) {
+          created.forEach((url) => URL.revokeObjectURL(url));
+        } else {
+          setUrls(created);
+        }
+      })
+      .catch((error) => console.error('Loading photos failed', error));
+    return () => {
+      cancelled = true;
+      created.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [experienceId]);
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.5rem' }}>
+      {urls.map((url) => (
+        <a key={url} href={url} target="_blank" rel="noreferrer">
+          <img src={url} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '4px', display: 'block' }} />
+        </a>
+      ))}
+    </div>
+  );
+}
 
 function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onLocationSelect: (latlng: any) => void }) {
   useMapEvents({
@@ -93,12 +129,14 @@ export default function Map() {
         {experiences.map((exp, idx) => (
           <Marker key={idx} position={[exp.lat, exp.lng]}>
             {/* Show saved title, rating, and notes when a marker is clicked */}
-            <Popup>
+            {/* minWidth leaves room for 3 thumbnails per row, since photos load after the popup is sized */}
+            <Popup minWidth={exp.photos?.length ? 220 : undefined}>
               <strong>{exp.title}</strong>
               <div style={{ color: '#f59e0b', fontSize: '1.1rem' }}>
                 {exp.rating ? '★'.repeat(exp.rating) + '☆'.repeat(5 - exp.rating) : 'Not rated'}
               </div>
               {exp.notes && <p style={{ whiteSpace: 'pre-wrap', margin: '0.5rem 0 0' }}>{exp.notes}</p>}
+              {exp.photos?.length > 0 && <ExperiencePhotos experienceId={exp.id} />}
             </Popup>
           </Marker>
         ))}
