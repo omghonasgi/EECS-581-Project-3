@@ -11,7 +11,7 @@
 //
 // Leave this component empty for now so each developer can fill in their part.
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
@@ -28,6 +28,13 @@ L.Marker.prototype.options.icon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41]
 });
+
+type PlaceSuggestion = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+};
 
 // Flies the Leaflet map to a Nominatim search result when target changes.
 function FlyToSearch({ target }: { target: { lat: number; lng: number } | null }) {
@@ -91,8 +98,11 @@ export default function Map() {
   const [isAdding, setIsAdding] = useState(false);
   const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
   const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -103,10 +113,71 @@ export default function Map() {
     }
   }, []);
 
+  // Debounced Nominatim autocomplete as the user types (similar to Google Maps).
+  useEffect(() => {
+    const query = searchParams.q.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`,
+          { headers: { Accept: 'application/json' } }
+        );
+        const data: PlaceSuggestion[] = await res.json();
+        setSuggestions(data);
+        setShowSuggestions(true);
+      } catch (error) {
+        console.error('Suggestion search failed', error);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [searchParams.q]);
+
+  // Close the suggestion list when clicking outside the search UI.
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (!searchWrapRef.current?.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  const goToPlace = (place: { lat: string | number; lon?: string | number; lng?: number; display_name?: string }) => {
+    const lat = typeof place.lat === 'string' ? parseFloat(place.lat) : place.lat;
+    const lng =
+      place.lng ??
+      (typeof place.lon === 'string' ? parseFloat(place.lon) : place.lon);
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return;
+    setSearchTarget({ lat, lng });
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setSearchError('');
+    if (place.display_name) {
+      setSearchParams({ q: place.display_name });
+    }
+  };
+
+  const handleSelectSuggestion = (place: PlaceSuggestion) => {
+    goToPlace(place);
+  };
+
   const handleSearch = async (e: FormEvent) => {
     e.preventDefault();
     const query = searchParams.q.trim();
     if (!query) return;
+
+    // Prefer the first open suggestion if the user hits Enter / the search button.
+    if (suggestions.length > 0) {
+      goToPlace(suggestions[0]);
+      return;
+    }
 
     setIsSearching(true);
     setSearchError('');
@@ -121,7 +192,7 @@ export default function Map() {
         setSearchTarget(null);
         return;
       }
-      setSearchTarget({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+      goToPlace(data[0]);
     } catch (error) {
       console.error('Search geocoding failed', error);
       setSearchError('Search failed');
@@ -153,15 +224,41 @@ export default function Map() {
   return (
     <div className="map-page">
       <form onSubmit={handleSearch} className="map-search">
-        <div className="map-search-field">
-          <input
-            type="text"
-            className="map-search-input"
-            value={searchParams.q}
-            onChange={(e) => setSearchParams({ q: e.target.value })}
-            placeholder="Search For a Location..."
-            aria-label="Search location"
-          />
+        <div className="map-search-wrap" ref={searchWrapRef}>
+          <div className="map-search-field">
+            <input
+              type="text"
+              className="map-search-input"
+              value={searchParams.q}
+              onChange={(e) => {
+                setSearchParams({ q: e.target.value });
+                setSearchError('');
+                setShowSuggestions(true);
+              }}
+              onFocus={() => {
+                if (suggestions.length > 0) setShowSuggestions(true);
+              }}
+              placeholder="Search For a Location..."
+              aria-label="Search location"
+              aria-autocomplete="list"
+              autoComplete="off"
+            />
+          </div>
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="map-search-suggestions" role="listbox">
+              {suggestions.map((place) => (
+                <li key={place.place_id} role="option">
+                  <button
+                    type="button"
+                    className="map-search-suggestion"
+                    onClick={() => handleSelectSuggestion(place)}
+                  >
+                    {place.display_name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <button
           type="submit"
