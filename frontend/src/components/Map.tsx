@@ -11,10 +11,11 @@
 //
 // Leave this component empty for now so each developer can fill in their part.
 
-import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { useState, useEffect, FormEvent } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
+import '../index.css';
 import { getPhotos } from '../photoStore';
 
 // Fix for default Leaflet marker icons not loading correctly in React
@@ -27,6 +28,17 @@ L.Marker.prototype.options.icon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41]
 });
+
+// Flies the Leaflet map to a Nominatim search result when target changes.
+function FlyToSearch({ target }: { target: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], 12);
+    }
+  }, [target, map]);
+  return null;
+}
 
 // Loads an experience's saved photos from IndexedDB and shows them as thumbnails.
 // Popup content only mounts while the popup is open, so photos load on demand.
@@ -53,10 +65,10 @@ function ExperiencePhotos({ experienceId }: { experienceId: number }) {
   }, [experienceId]);
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.5rem' }}>
+    <div className="experience-photos">
       {urls.map((url) => (
         <a key={url} href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt="" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '4px', display: 'block' }} />
+          <img src={url} alt="" className="experience-photo-thumb" />
         </a>
       ))}
     </div>
@@ -77,6 +89,10 @@ function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onL
 export default function Map() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
+  const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchError, setSearchError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -86,6 +102,33 @@ export default function Map() {
       setExperiences(JSON.parse(saved));
     }
   }, []);
+
+  const handleSearch = async (e: FormEvent) => {
+    e.preventDefault();
+    const query = searchParams.q.trim();
+    if (!query) return;
+
+    setIsSearching(true);
+    setSearchError('');
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+        { headers: { Accept: 'application/json' } }
+      );
+      const data = await res.json();
+      if (!data.length) {
+        setSearchError('Location not found');
+        setSearchTarget(null);
+        return;
+      }
+      setSearchTarget({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+    } catch (error) {
+      console.error('Search geocoding failed', error);
+      setSearchError('Search failed');
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleMapClick = async (latlng: any) => {
     let country = '';
@@ -108,23 +151,55 @@ export default function Map() {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 1000, background: 'white', padding: '10px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }}>
-        <button 
+    <div className="map-page">
+      <form onSubmit={handleSearch} className="map-search">
+        <div className="map-search-field">
+          <input
+            type="text"
+            className="map-search-input"
+            value={searchParams.q}
+            onChange={(e) => setSearchParams({ q: e.target.value })}
+            placeholder="Search For a Location..."
+            aria-label="Search location"
+          />
+        </div>
+        <button
+          type="submit"
+          className="map-search-submit"
+          disabled={isSearching}
+          aria-label="Search"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="2"/>
+            <path d="M20 20l-3.5-3.5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+        {searchError && <span className="map-search-error">{searchError}</span>}
+      </form>
+
+      <div className="map-add-panel">
+        <button
+          className={`map-add-button${isAdding ? ' is-adding' : ''}`}
           onClick={() => setIsAdding(!isAdding)}
-          style={{ padding: '0.75rem 1rem', background: isAdding ? '#991b1b' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
         >
           {isAdding ? 'Cancel Add' : 'Add Experience'}
         </button>
-        {isAdding && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#334155' }}>Click anywhere on the map</p>}
+        {isAdding && <p className="map-add-hint">Click anywhere on the map</p>}
       </div>
       
-      <MapContainer center={[38.95764, -95.25418]} zoom={4} style={{ height: '100vh', width: '100%' }}>
+      <MapContainer
+        center={[38.95764, -95.25418]}
+        zoom={4}
+        className="map-container"
+        zoomControl={false}
+      >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
+        <ZoomControl position="topright" />
         <MapInteraction isAdding={isAdding} onLocationSelect={handleMapClick} />
+        <FlyToSearch target={searchTarget} />
         
         {experiences.map((exp, idx) => (
           <Marker key={idx} position={[exp.lat, exp.lng]}>
@@ -132,10 +207,10 @@ export default function Map() {
             {/* minWidth leaves room for 3 thumbnails per row, since photos load after the popup is sized */}
             <Popup minWidth={exp.photos?.length ? 220 : undefined}>
               <strong>{exp.title}</strong>
-              <div style={{ color: '#f59e0b', fontSize: '1.1rem' }}>
+              <div className="experience-rating">
                 {exp.rating ? '★'.repeat(exp.rating) + '☆'.repeat(5 - exp.rating) : 'Not rated'}
               </div>
-              {exp.notes && <p style={{ whiteSpace: 'pre-wrap', margin: '0.5rem 0 0' }}>{exp.notes}</p>}
+              {exp.notes && <p className="experience-notes">{exp.notes}</p>}
               {exp.photos?.length > 0 && <ExperiencePhotos experienceId={exp.id} />}
             </Popup>
           </Marker>
