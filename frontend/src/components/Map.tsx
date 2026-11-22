@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import '../index.css';
 import { useAuth } from '../lib/AuthProvider';
+import { listExperiences, type Experience } from '../lib/experiences';
 import ExperienceDetails from './ExperienceDetails';
 
 // Fix for default Leaflet marker icons not loading correctly in React
@@ -70,7 +71,10 @@ function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onL
 }
 
 export default function Map() {
-  const [experiences, setExperiences] = useState<any[]>([]);
+  const [experiences, setExperiences] = useState<Experience[]>([]);
+  // Rating filter (Om builds the UI, Axel wires it to the query): null = all
+  const [minRating, setMinRating] = useState<number | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
   const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
@@ -84,12 +88,29 @@ export default function Map() {
   const { user } = useAuth();
 
   useEffect(() => {
-    // Load markers so they persist after refresh. Only the signed-in user's
-    // experiences are shown (Req 7); entries saved before userId existed are hidden.
-    const saved = localStorage.getItem('triptrace_experiences');
-    const all = saved ? JSON.parse(saved) : [];
-    setExperiences(all.filter((exp: any) => exp.userId === user?.id));
-  }, [user?.id]);
+    // Load the signed-in user's experiences from Supabase (RLS = own rows).
+    // Re-runs when the user or rating filter changes, and on every visit to
+    // /map, so saves and edits show up as soon as the form navigates back.
+    if (!user) return;
+    let cancelled = false;
+    setLoadError('');
+    listExperiences({ minRating })
+      .then((rows) => {
+        if (!cancelled) setExperiences(rows);
+      })
+      .catch((error) => {
+        console.error('Loading experiences failed', error);
+        if (!cancelled) setLoadError('Could not load your experiences.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, minRating]);
+
+  // Close the details panel if the selected experience is filtered out
+  useEffect(() => {
+    if (selectedId !== null && !experiences.some((exp) => exp.id === selectedId)) setSelectedId(null);
+  }, [experiences, selectedId]);
 
   const selectedExperience = experiences.find((exp) => exp.id === selectedId);
 
@@ -326,6 +347,22 @@ export default function Map() {
           {isAdding ? 'Cancel Add' : 'Add Experience'}
         </button>
         {isAdding && <p className="map-add-hint">Click anywhere on the map</p>}
+        {/* Rating filter: placeholder control for Om's Filter UI; keep the
+            minRating state wiring when restyling. */}
+        <label className="map-filter">
+          <span>Rating</span>
+          <select
+            value={minRating ?? ''}
+            onChange={(e) => setMinRating(e.target.value ? Number(e.target.value) : null)}
+            aria-label="Filter experiences by minimum rating"
+          >
+            <option value="">All</option>
+            {[5, 4, 3, 2, 1].map((n) => (
+              <option key={n} value={n}>{n === 5 ? '5 stars' : `${n}+ stars`}</option>
+            ))}
+          </select>
+        </label>
+        {loadError && <p className="map-add-hint" style={{ color: '#b91c1c' }}>{loadError}</p>}
       </div>
       
       <MapContainer

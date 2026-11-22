@@ -13,104 +13,48 @@
 //                   outside 1-5, saved rating shows on the experience.
 //                   Notes field up to 2,000 characters with a live character
 //                   count; saved notes render with line breaks preserved.
+//                 Sprint 2: Save persists to Supabase (lib/experiences.ts).
 //   Om Ghonasgi   - Req 8 Edit UI: form prefilled with title, location, rating,
 //                   notes, and existing photos (with Sprint 1 validation).
 
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { savePhotos, getPhotos } from '../photoStore';
-import { useAuth } from '../lib/AuthProvider';
+import { saveExperience, type Experience as SavedExperience } from '../lib/experiences';
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png'];
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
 
 type ExistingPhoto = {
-  key: string;
+  id: number;
   url: string;
-  ref: number | string;
-  isObjectUrl: boolean;
 };
 
 export default function Experience() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   // If navigated from ExperienceDetails "Edit", prefill from that experience
-  const editingExperience = location.state?.experience ?? null;
+  const editingExperience: SavedExperience | null = location.state?.experience ?? null;
   const isEditing = Boolean(editingExperience);
 
   // Destructure prefilled data passed from Map.tsx or ExperienceDetails.tsx
-  const lat = isEditing ? editingExperience.lat : (location.state?.lat ?? null);
-  const lng = isEditing ? editingExperience.lng : (location.state?.lng ?? null);
-  const country = isEditing ? (editingExperience.country ?? '') : (location.state?.country ?? '');
-  const state = isEditing ? (editingExperience.state ?? '') : (location.state?.state ?? '');
+  const lat: number | null = editingExperience ? editingExperience.lat : (location.state?.lat ?? null);
+  const lng: number | null = editingExperience ? editingExperience.lng : (location.state?.lng ?? null);
+  const country: string = editingExperience ? editingExperience.country : (location.state?.country ?? '');
+  const state: string = editingExperience ? editingExperience.state : (location.state?.state ?? '');
 
   const [title, setTitle] = useState<string>(editingExperience?.title ?? '');
   const [error, setError] = useState('');
   const [rating, setRating] = useState<number>(editingExperience?.rating ?? 0); // 0 = not rated yet
   const [notes, setNotes] = useState<string>(editingExperience?.notes ?? '');
   const MAX_NOTES = 2000;
-  const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>([]);
+  // Existing photos already have signed Storage URLs from the map's load
+  const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>(
+    () => editingExperience?.photos.map((p) => ({ id: p.id, url: p.url })) ?? []
+  );
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoError, setPhotoError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  // Load existing photos when editing (supports both Storage URL strings and IndexedDB blobs)
-  useEffect(() => {
-    if (!isEditing || !editingExperience) {
-      setExistingPhotos([]);
-      return;
-    }
-
-    const savedRefs: unknown[] = Array.isArray(editingExperience.photos) ? editingExperience.photos : [];
-    if (savedRefs.length > 0 && typeof savedRefs[0] === 'string') {
-      setExistingPhotos(
-        (savedRefs as string[]).map((url) => ({
-          key: url,
-          url,
-          ref: url,
-          isObjectUrl: false,
-        }))
-      );
-      return;
-    }
-
-    let cancelled = false;
-    let createdUrls: string[] = [];
-
-    getPhotos(editingExperience.id)
-      .then((stored) => {
-        const filtered =
-          savedRefs.length > 0
-            ? stored.filter((p: any) => p.id === undefined || savedRefs.includes(p.id))
-            : stored;
-
-        const loaded: ExistingPhoto[] = filtered.map((p: any, idx: number) => {
-          const url = URL.createObjectURL(p.blob);
-          createdUrls.push(url);
-          const ref = p.id ?? (savedRefs[idx] as number | string | undefined) ?? idx;
-          return {
-            key: String(ref),
-            url,
-            ref,
-            isObjectUrl: true,
-          };
-        });
-
-        if (cancelled) {
-          createdUrls.forEach((u) => URL.revokeObjectURL(u));
-        } else {
-          setExistingPhotos(loaded);
-        }
-      })
-      .catch((err) => console.error('Loading existing photos failed', err));
-
-    return () => {
-      cancelled = true;
-      createdUrls.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, [isEditing, editingExperience]);
 
   // Thumbnail URLs for newly selected photos, released when the selection changes
   const previews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos]);
@@ -157,51 +101,34 @@ export default function Experience() {
       return;
     }
 
-    const id = isEditing ? editingExperience.id : Date.now();
-
-    // Store each newly added photo tied to this experience
-    let newPhotoIds: number[] = [];
-    setSaving(true);
-    try {
-      if (photos.length > 0) {
-        newPhotoIds = await savePhotos(id, photos);
-      }
-    } catch (err) {
-      console.error('Saving photos failed', err);
-      setPhotoError('Could not save photos. Please try again.');
-      setSaving(false);
+    if (lat === null || lng === null) {
+      setError('Pick a location on the map first.');
       return;
     }
 
-    const keptPhotoRefs = existingPhotos.map((p) => p.ref);
-    const allPhotos = isEditing ? [...keptPhotoRefs, ...newPhotoIds] : newPhotoIds;
-
-    const savedExperience = {
-      ...(isEditing ? editingExperience : {}),
-      id,
-      userId: isEditing ? editingExperience.userId : user?.id,
-      title,
-      lat,
-      lng,
-      country,
-      state,
-      photos: allPhotos,
-      rating: rating || null,
-      notes,
-    };
-
-    // Axel Bengoa (Req 8 - 1 pt): Replace this localStorage persistence block
-    // with the Supabase insert/update + Storage upload and map refresh.
-    // Available inputs for Edit mode:
-    //   - savedExperience (id, title, rating, notes, lat, lng, country, state)
-    //   - keptPhotoRefs (remaining existing Storage URLs / photo refs)
-    //   - photos (newly selected File[] to upload to Supabase Storage)
-    const existingData = localStorage.getItem('triptrace_experiences');
-    const experiences = existingData ? JSON.parse(existingData) : [];
-    const nextExperiences = isEditing
-      ? experiences.map((exp: any) => (exp.id === id ? savedExperience : exp))
-      : [...experiences, savedExperience];
-    localStorage.setItem('triptrace_experiences', JSON.stringify(nextExperiences));
+    // Axel Bengoa (Req 8 save + Req 10): write the row to Supabase Postgres,
+    // upload new photos to Storage, and drop photos removed in the form.
+    // The map reloads from Supabase when we navigate back, so markers refresh.
+    setSaving(true);
+    try {
+      await saveExperience({
+        id: editingExperience?.id,
+        title,
+        lat,
+        lng,
+        country,
+        state,
+        rating: rating || null,
+        notes,
+        keepPhotoIds: existingPhotos.map((p) => p.id),
+        newFiles: photos,
+      });
+    } catch (err) {
+      console.error('Saving experience failed', err);
+      setError('Could not save this experience. Please try again.');
+      setSaving(false);
+      return;
+    }
 
     // Navigate back to the map view
     navigate('/map');
@@ -252,11 +179,11 @@ export default function Experience() {
           {(existingPhotos.length > 0 || previews.length > 0) && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
               {existingPhotos.map((photo, idx) => (
-                <div key={photo.key} style={{ position: 'relative' }}>
+                <div key={photo.id} style={{ position: 'relative' }}>
                   <img src={photo.url} alt={`Existing photo ${idx + 1}`} style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '6px', display: 'block' }} />
                   <button
                     type="button"
-                    onClick={() => setExistingPhotos(existingPhotos.filter((item) => item.key !== photo.key))}
+                    onClick={() => setExistingPhotos(existingPhotos.filter((item) => item.id !== photo.id))}
                     aria-label={`Remove existing photo ${idx + 1}`}
                     style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', borderRadius: '50%', border: 'none', background: 'rgba(15, 23, 42, 0.7)', color: 'white', cursor: 'pointer', lineHeight: '22px', padding: 0 }}
                   >
