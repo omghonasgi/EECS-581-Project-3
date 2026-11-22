@@ -11,10 +11,12 @@
 //
 // Leave this component empty for now so each developer can fill in their part.
 
-import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { useState, useEffect, useRef, FormEvent } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
+import '../index.css';
+import { getPhotos } from '../photoStore';
 
 // Fix for default Leaflet marker icons not loading correctly in React
 import L from 'leaflet';
@@ -26,6 +28,69 @@ L.Marker.prototype.options.icon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41]
 });
+
+type SearchSuggestion =
+  | {
+      kind: 'experience';
+      id: number;
+      label: string;
+      detail: string;
+      lat: number;
+      lng: number;
+    }
+  | {
+      kind: 'place';
+      place_id: number;
+      label: string;
+      lat: string;
+      lon: string;
+    };
+
+// Flies the Leaflet map to a search result when target changes.
+function FlyToSearch({ target }: { target: { lat: number; lng: number; zoom?: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], target.zoom ?? 12);
+    }
+  }, [target, map]);
+  return null;
+}
+
+// Loads an experience's saved photos from IndexedDB and shows them as thumbnails.
+// Popup content only mounts while the popup is open, so photos load on demand.
+function ExperiencePhotos({ experienceId }: { experienceId: number }) {
+  const [urls, setUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    let created: string[] = [];
+    let cancelled = false;
+    getPhotos(experienceId)
+      .then((photos) => {
+        created = photos.map((photo) => URL.createObjectURL(photo.blob));
+        if (cancelled) {
+          created.forEach((url) => URL.revokeObjectURL(url));
+        } else {
+          setUrls(created);
+        }
+      })
+      .catch((error) => console.error('Loading photos failed', error));
+    return () => {
+      cancelled = true;
+      created.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [experienceId]);
+
+  return (
+    <div className="experience-photos">
+      {urls.map((url) => (
+        <a key={url} href={url} target="_blank" rel="noreferrer">
+          <img src={url} alt="" className="experience-photo-thumb" />
+        </a>
+      ))}
+    </div>
+  );
+}
 
 function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onLocationSelect: (latlng: any) => void }) {
   useMapEvents({
@@ -41,6 +106,13 @@ function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onL
 export default function Map() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
+  const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,6 +122,139 @@ export default function Map() {
       setExperiences(JSON.parse(saved));
     }
   }, []);
+
+  // Match saved experiences by title, country, or state (local, no network).
+  function matchingExperiences(query: string): SearchSuggestion[] {
+    const q = query.toLowerCase();
+    return experiences
+      .filter((exp) => {
+        const title = String(exp.title ?? '').toLowerCase();
+        const country = String(exp.country ?? '').toLowerCase();
+        const state = String(exp.state ?? '').toLowerCase();
+        return title.includes(q) || country.includes(q) || state.includes(q);
+      })
+      .slice(0, 5)
+      .map((exp) => {
+        const where = [exp.state, exp.country].filter(Boolean).join(', ');
+        return {
+          kind: 'experience' as const,
+          id: exp.id,
+          label: exp.title || 'Untitled experience',
+          detail: where || `${Number(exp.lat).toFixed(2)}, ${Number(exp.lng).toFixed(2)}`,
+          lat: exp.lat,
+          lng: exp.lng,
+        };
+      });
+  }
+
+  // Debounced suggestions: user's experiences first, then Nominatim places.
+  useEffect(() => {
+    const query = searchParams.q.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      const experienceHits = matchingExperiences(query);
+      let placeHits: SearchSuggestion[] = [];
+
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`,
+          { headers: { Accept: 'application/json' } }
+        );
+        const data = await res.json();
+        placeHits = data.map((place: { place_id: number; display_name: string; lat: string; lon: string }) => ({
+          kind: 'place' as const,
+          place_id: place.place_id,
+          label: place.display_name,
+          lat: place.lat,
+          lon: place.lon,
+        }));
+      } catch (error) {
+        console.error('Suggestion search failed', error);
+      }
+
+      setSuggestions([...experienceHits, ...placeHits]);
+      setShowSuggestions(true);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [searchParams.q, experiences]);
+
+  // Close the suggestion list when clicking outside the search UI.
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (!searchWrapRef.current?.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  const goToSuggestion = (item: SearchSuggestion) => {
+    if (item.kind === 'experience') {
+      setSearchTarget({ lat: item.lat, lng: item.lng, zoom: 14 });
+      setSearchParams({ q: item.label });
+    } else {
+      const lat = parseFloat(item.lat);
+      const lng = parseFloat(item.lon);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+      setSearchTarget({ lat, lng, zoom: 12 });
+      setSearchParams({ q: item.label });
+    }
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setSearchError('');
+  };
+
+  const handleSearch = async (e: FormEvent) => {
+    e.preventDefault();
+    const query = searchParams.q.trim();
+    if (!query) return;
+
+    // Prefer the first open suggestion if the user hits Enter / the search button.
+    if (suggestions.length > 0) {
+      goToSuggestion(suggestions[0]);
+      return;
+    }
+
+    // No open list: try experiences first, then Nominatim.
+    const experienceHits = matchingExperiences(query);
+    if (experienceHits.length > 0) {
+      goToSuggestion(experienceHits[0]);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+        { headers: { Accept: 'application/json' } }
+      );
+      const data = await res.json();
+      if (!data.length) {
+        setSearchError('No experiences or locations found');
+        setSearchTarget(null);
+        return;
+      }
+      goToSuggestion({
+        kind: 'place',
+        place_id: data[0].place_id,
+        label: data[0].display_name,
+        lat: data[0].lat,
+        lon: data[0].lon,
+      });
+    } catch (error) {
+      console.error('Search geocoding failed', error);
+      setSearchError('Search failed');
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleMapClick = async (latlng: any) => {
     let country = '';
@@ -72,33 +277,111 @@ export default function Map() {
   };
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 1000, background: 'white', padding: '10px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }}>
-        <button 
+    <div className="map-page">
+      <form onSubmit={handleSearch} className="map-search">
+        <div className="map-search-wrap" ref={searchWrapRef}>
+          <div className="map-search-field">
+            <input
+              type="text"
+              className="map-search-input"
+              value={searchParams.q}
+              onChange={(e) => {
+                setSearchParams({ q: e.target.value });
+                setSearchError('');
+                setShowSuggestions(true);
+              }}
+              onFocus={() => {
+                if (suggestions.length > 0) setShowSuggestions(true);
+              }}
+              placeholder="Search experiences or places..."
+              aria-label="Search experiences or places"
+              aria-autocomplete="list"
+              autoComplete="off"
+            />
+          </div>
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="map-search-suggestions" role="listbox">
+              {suggestions.some((s) => s.kind === 'experience') && (
+                <li className="map-search-group-label" aria-hidden="true">Your experiences</li>
+              )}
+              {suggestions.filter((s) => s.kind === 'experience').map((item) => (
+                <li key={`exp-${item.id}`} role="option">
+                  <button
+                    type="button"
+                    className="map-search-suggestion"
+                    onClick={() => goToSuggestion(item)}
+                  >
+                    <span className="map-search-suggestion-title">{item.label}</span>
+                    <span className="map-search-suggestion-detail">{item.detail}</span>
+                  </button>
+                </li>
+              ))}
+              {suggestions.some((s) => s.kind === 'place') && (
+                <li className="map-search-group-label" aria-hidden="true">Places</li>
+              )}
+              {suggestions.filter((s) => s.kind === 'place').map((item) => (
+                <li key={`place-${item.place_id}`} role="option">
+                  <button
+                    type="button"
+                    className="map-search-suggestion"
+                    onClick={() => goToSuggestion(item)}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button
+          type="submit"
+          className="map-search-submit"
+          disabled={isSearching}
+          aria-label="Search"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="2"/>
+            <path d="M20 20l-3.5-3.5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+        {searchError && <span className="map-search-error">{searchError}</span>}
+      </form>
+
+      <div className="map-add-panel">
+        <button
+          className={`map-add-button${isAdding ? ' is-adding' : ''}`}
           onClick={() => setIsAdding(!isAdding)}
-          style={{ padding: '0.75rem 1rem', background: isAdding ? '#991b1b' : '#0f766e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
         >
           {isAdding ? 'Cancel Add' : 'Add Experience'}
         </button>
-        {isAdding && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#334155' }}>Click anywhere on the map</p>}
+        {isAdding && <p className="map-add-hint">Click anywhere on the map</p>}
       </div>
       
-      <MapContainer center={[38.95764, -95.25418]} zoom={4} style={{ height: '100vh', width: '100%' }}>
+      <MapContainer
+        center={[38.95764, -95.25418]}
+        zoom={4}
+        className="map-container"
+        zoomControl={false}
+      >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
+        <ZoomControl position="topright" />
         <MapInteraction isAdding={isAdding} onLocationSelect={handleMapClick} />
+        <FlyToSearch target={searchTarget} />
         
         {experiences.map((exp, idx) => (
           <Marker key={idx} position={[exp.lat, exp.lng]}>
             {/* Show saved title, rating, and notes when a marker is clicked */}
-            <Popup>
+            {/* minWidth leaves room for 3 thumbnails per row, since photos load after the popup is sized */}
+            <Popup minWidth={exp.photos?.length ? 220 : undefined}>
               <strong>{exp.title}</strong>
-              <div style={{ color: '#f59e0b', fontSize: '1.1rem' }}>
+              <div className="experience-rating">
                 {exp.rating ? '★'.repeat(exp.rating) + '☆'.repeat(5 - exp.rating) : 'Not rated'}
               </div>
-              {exp.notes && <p style={{ whiteSpace: 'pre-wrap', margin: '0.5rem 0 0' }}>{exp.notes}</p>}
+              {exp.notes && <p className="experience-notes">{exp.notes}</p>}
+              {exp.photos?.length > 0 && <ExperiencePhotos experienceId={exp.id} />}
             </Popup>
           </Marker>
         ))}
