@@ -12,11 +12,12 @@
 // Leave this component empty for now so each developer can fill in their part.
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import '../index.css';
-import { getPhotos } from '../photoStore';
+import { useAuth } from '../lib/AuthProvider';
+import ExperienceDetails from './ExperienceDetails';
 
 // Fix for default Leaflet marker icons not loading correctly in React
 import L from 'leaflet';
@@ -57,41 +58,6 @@ function FlyToSearch({ target }: { target: { lat: number; lng: number; zoom?: nu
   return null;
 }
 
-// Loads an experience's saved photos from IndexedDB and shows them as thumbnails.
-// Popup content only mounts while the popup is open, so photos load on demand.
-function ExperiencePhotos({ experienceId }: { experienceId: number }) {
-  const [urls, setUrls] = useState<string[]>([]);
-
-  useEffect(() => {
-    let created: string[] = [];
-    let cancelled = false;
-    getPhotos(experienceId)
-      .then((photos) => {
-        created = photos.map((photo) => URL.createObjectURL(photo.blob));
-        if (cancelled) {
-          created.forEach((url) => URL.revokeObjectURL(url));
-        } else {
-          setUrls(created);
-        }
-      })
-      .catch((error) => console.error('Loading photos failed', error));
-    return () => {
-      cancelled = true;
-      created.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [experienceId]);
-
-  return (
-    <div className="experience-photos">
-      {urls.map((url) => (
-        <a key={url} href={url} target="_blank" rel="noreferrer">
-          <img src={url} alt="" className="experience-photo-thumb" />
-        </a>
-      ))}
-    </div>
-  );
-}
-
 function MapInteraction({ isAdding, onLocationSelect }: { isAdding: boolean, onLocationSelect: (latlng: any) => void }) {
   useMapEvents({
     click(e) {
@@ -113,15 +79,19 @@ export default function Map() {
   const [searchError, setSearchError] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
-    // Load markers so they persist after refresh
+    // Load markers so they persist after refresh. Only the signed-in user's
+    // experiences are shown (Req 7); entries saved before userId existed are hidden.
     const saved = localStorage.getItem('triptrace_experiences');
-    if (saved) {
-      setExperiences(JSON.parse(saved));
-    }
-  }, []);
+    const all = saved ? JSON.parse(saved) : [];
+    setExperiences(all.filter((exp: any) => exp.userId === user?.id));
+  }, [user?.id]);
+
+  const selectedExperience = experiences.find((exp) => exp.id === selectedId);
 
   // Match saved experiences by title, country, or state (local, no network).
   function matchingExperiences(query: string): SearchSuggestion[] {
@@ -197,6 +167,7 @@ export default function Map() {
   const goToSuggestion = (item: SearchSuggestion) => {
     if (item.kind === 'experience') {
       setSearchTarget({ lat: item.lat, lng: item.lng, zoom: 14 });
+      setSelectedId(item.id);
       setSearchParams({ q: item.label });
     } else {
       const lat = parseFloat(item.lat);
@@ -371,21 +342,21 @@ export default function Map() {
         <MapInteraction isAdding={isAdding} onLocationSelect={handleMapClick} />
         <FlyToSearch target={searchTarget} />
         
-        {experiences.map((exp, idx) => (
-          <Marker key={idx} position={[exp.lat, exp.lng]}>
-            {/* Show saved title, rating, and notes when a marker is clicked */}
-            {/* minWidth leaves room for 3 thumbnails per row, since photos load after the popup is sized */}
-            <Popup minWidth={exp.photos?.length ? 220 : undefined}>
-              <strong>{exp.title}</strong>
-              <div className="experience-rating">
-                {exp.rating ? '★'.repeat(exp.rating) + '☆'.repeat(5 - exp.rating) : 'Not rated'}
-              </div>
-              {exp.notes && <p className="experience-notes">{exp.notes}</p>}
-              {exp.photos?.length > 0 && <ExperiencePhotos experienceId={exp.id} />}
-            </Popup>
+        {experiences.map((exp) => (
+          <Marker
+            key={exp.id}
+            position={[exp.lat, exp.lng]}
+            eventHandlers={{ click: () => setSelectedId(exp.id) }}
+          >
+            {/* Title on hover so markers can be told apart before opening details */}
+            <Tooltip direction="top" offset={[0, -36]}>{exp.title}</Tooltip>
           </Marker>
         ))}
       </MapContainer>
+
+      {selectedExperience && (
+        <ExperienceDetails experience={selectedExperience} onClose={() => setSelectedId(null)} />
+      )}
     </div>
   );
 }
