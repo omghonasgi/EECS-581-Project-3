@@ -19,6 +19,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { savePhotos } from '../photoStore';
+import { useAuth } from '../lib/AuthProvider';
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png'];
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -26,6 +27,7 @@ const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
 export default function Experience() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   // Destructure prefilled data passed from Map.tsx
   const { lat, lng, country, state } = location.state || { lat: null, lng: null, country: '', state: '' };
@@ -100,6 +102,7 @@ export default function Experience() {
 
     const newExperience = {
       id,
+      userId: user?.id, // ties the experience to its owner so the map only shows your own
       title,
       lat,
       lng,
