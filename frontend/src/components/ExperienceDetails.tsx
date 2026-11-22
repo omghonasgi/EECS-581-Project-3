@@ -9,6 +9,7 @@
 // .experience-details-actions area at the bottom of the panel.
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPhotos } from '../photoStore';
 
 type ExperienceDetailsProps = {
@@ -16,19 +17,29 @@ type ExperienceDetailsProps = {
   onClose: () => void;
 };
 
-// Loads the experience's saved photos from IndexedDB as object URLs.
-function usePhotoUrls(experienceId: number) {
+// Loads the experience's saved photos (Storage URLs or local IndexedDB blobs).
+function usePhotoUrls(experience: any) {
   const [urls, setUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // If photos are already Storage URL strings, use them directly.
+    if (Array.isArray(experience.photos) && typeof experience.photos[0] === 'string') {
+      setUrls(experience.photos);
+      setLoading(false);
+      return;
+    }
+
     let created: string[] = [];
     let cancelled = false;
     setUrls([]);
     setLoading(true);
-    getPhotos(experienceId)
+    getPhotos(experience.id)
       .then((photos) => {
-        created = photos.map((photo) => URL.createObjectURL(photo.blob));
+        const visible = Array.isArray(experience.photos)
+          ? photos.filter((photo: any) => photo.id === undefined || experience.photos.includes(photo.id))
+          : photos;
+        created = visible.map((photo: any) => URL.createObjectURL(photo.blob));
         if (cancelled) {
           created.forEach((url) => URL.revokeObjectURL(url));
         } else {
@@ -43,13 +54,14 @@ function usePhotoUrls(experienceId: number) {
       cancelled = true;
       created.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [experienceId]);
+  }, [experience.id, experience.photos]);
 
   return { urls, loading };
 }
 
 export default function ExperienceDetails({ experience, onClose }: ExperienceDetailsProps) {
-  const { urls, loading } = usePhotoUrls(experience.id);
+  const navigate = useNavigate();
+  const { urls, loading } = usePhotoUrls(experience);
   const [viewing, setViewing] = useState<number | null>(null); // index of the full-size photo
 
   // Reset the viewer when a different experience is selected
@@ -130,7 +142,14 @@ export default function ExperienceDetails({ experience, onClose }: ExperienceDet
         </section>
 
         <div className="experience-details-actions">
-          {/* Req 8 (edit) and Req 9 (delete) buttons go here */}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => navigate('/experience', { state: { experience } })}
+          >
+            Edit
+          </button>
+          {/* Req 9 (delete) button goes here */}
         </div>
       </aside>
 
