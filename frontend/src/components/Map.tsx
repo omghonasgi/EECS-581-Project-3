@@ -29,19 +29,29 @@ L.Marker.prototype.options.icon = L.icon({
   iconAnchor: [12, 41]
 });
 
-type PlaceSuggestion = {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-};
+type SearchSuggestion =
+  | {
+      kind: 'experience';
+      id: number;
+      label: string;
+      detail: string;
+      lat: number;
+      lng: number;
+    }
+  | {
+      kind: 'place';
+      place_id: number;
+      label: string;
+      lat: string;
+      lon: string;
+    };
 
-// Flies the Leaflet map to a Nominatim search result when target changes.
-function FlyToSearch({ target }: { target: { lat: number; lng: number } | null }) {
+// Flies the Leaflet map to a search result when target changes.
+function FlyToSearch({ target }: { target: { lat: number; lng: number; zoom?: number } | null }) {
   const map = useMap();
   useEffect(() => {
     if (target) {
-      map.flyTo([target.lat, target.lng], 12);
+      map.flyTo([target.lat, target.lng], target.zoom ?? 12);
     }
   }, [target, map]);
   return null;
@@ -97,8 +107,8 @@ export default function Map() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
-  const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number } | null>(null);
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -113,7 +123,31 @@ export default function Map() {
     }
   }, []);
 
-  // Debounced Nominatim autocomplete as the user types (similar to Google Maps).
+  // Match saved experiences by title, country, or state (local, no network).
+  function matchingExperiences(query: string): SearchSuggestion[] {
+    const q = query.toLowerCase();
+    return experiences
+      .filter((exp) => {
+        const title = String(exp.title ?? '').toLowerCase();
+        const country = String(exp.country ?? '').toLowerCase();
+        const state = String(exp.state ?? '').toLowerCase();
+        return title.includes(q) || country.includes(q) || state.includes(q);
+      })
+      .slice(0, 5)
+      .map((exp) => {
+        const where = [exp.state, exp.country].filter(Boolean).join(', ');
+        return {
+          kind: 'experience' as const,
+          id: exp.id,
+          label: exp.title || 'Untitled experience',
+          detail: where || `${Number(exp.lat).toFixed(2)}, ${Number(exp.lng).toFixed(2)}`,
+          lat: exp.lat,
+          lng: exp.lng,
+        };
+      });
+  }
+
+  // Debounced suggestions: user's experiences first, then Nominatim places.
   useEffect(() => {
     const query = searchParams.q.trim();
     if (query.length < 2) {
@@ -122,21 +156,32 @@ export default function Map() {
     }
 
     const timer = window.setTimeout(async () => {
+      const experienceHits = matchingExperiences(query);
+      let placeHits: SearchSuggestion[] = [];
+
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`,
           { headers: { Accept: 'application/json' } }
         );
-        const data: PlaceSuggestion[] = await res.json();
-        setSuggestions(data);
-        setShowSuggestions(true);
+        const data = await res.json();
+        placeHits = data.map((place: { place_id: number; display_name: string; lat: string; lon: string }) => ({
+          kind: 'place' as const,
+          place_id: place.place_id,
+          label: place.display_name,
+          lat: place.lat,
+          lon: place.lon,
+        }));
       } catch (error) {
         console.error('Suggestion search failed', error);
       }
+
+      setSuggestions([...experienceHits, ...placeHits]);
+      setShowSuggestions(true);
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [searchParams.q]);
+  }, [searchParams.q, experiences]);
 
   // Close the suggestion list when clicking outside the search UI.
   useEffect(() => {
@@ -149,23 +194,20 @@ export default function Map() {
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  const goToPlace = (place: { lat: string | number; lon?: string | number; lng?: number; display_name?: string }) => {
-    const lat = typeof place.lat === 'string' ? parseFloat(place.lat) : place.lat;
-    const lng =
-      place.lng ??
-      (typeof place.lon === 'string' ? parseFloat(place.lon) : place.lon);
-    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return;
-    setSearchTarget({ lat, lng });
+  const goToSuggestion = (item: SearchSuggestion) => {
+    if (item.kind === 'experience') {
+      setSearchTarget({ lat: item.lat, lng: item.lng, zoom: 14 });
+      setSearchParams({ q: item.label });
+    } else {
+      const lat = parseFloat(item.lat);
+      const lng = parseFloat(item.lon);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+      setSearchTarget({ lat, lng, zoom: 12 });
+      setSearchParams({ q: item.label });
+    }
     setShowSuggestions(false);
     setSuggestions([]);
     setSearchError('');
-    if (place.display_name) {
-      setSearchParams({ q: place.display_name });
-    }
-  };
-
-  const handleSelectSuggestion = (place: PlaceSuggestion) => {
-    goToPlace(place);
   };
 
   const handleSearch = async (e: FormEvent) => {
@@ -175,7 +217,14 @@ export default function Map() {
 
     // Prefer the first open suggestion if the user hits Enter / the search button.
     if (suggestions.length > 0) {
-      goToPlace(suggestions[0]);
+      goToSuggestion(suggestions[0]);
+      return;
+    }
+
+    // No open list: try experiences first, then Nominatim.
+    const experienceHits = matchingExperiences(query);
+    if (experienceHits.length > 0) {
+      goToSuggestion(experienceHits[0]);
       return;
     }
 
@@ -188,11 +237,17 @@ export default function Map() {
       );
       const data = await res.json();
       if (!data.length) {
-        setSearchError('Location not found');
+        setSearchError('No experiences or locations found');
         setSearchTarget(null);
         return;
       }
-      goToPlace(data[0]);
+      goToSuggestion({
+        kind: 'place',
+        place_id: data[0].place_id,
+        label: data[0].display_name,
+        lat: data[0].lat,
+        lon: data[0].lon,
+      });
     } catch (error) {
       console.error('Search geocoding failed', error);
       setSearchError('Search failed');
@@ -238,22 +293,40 @@ export default function Map() {
               onFocus={() => {
                 if (suggestions.length > 0) setShowSuggestions(true);
               }}
-              placeholder="Search For a Location..."
-              aria-label="Search location"
+              placeholder="Search experiences or places..."
+              aria-label="Search experiences or places"
               aria-autocomplete="list"
               autoComplete="off"
             />
           </div>
           {showSuggestions && suggestions.length > 0 && (
             <ul className="map-search-suggestions" role="listbox">
-              {suggestions.map((place) => (
-                <li key={place.place_id} role="option">
+              {suggestions.some((s) => s.kind === 'experience') && (
+                <li className="map-search-group-label" aria-hidden="true">Your experiences</li>
+              )}
+              {suggestions.filter((s) => s.kind === 'experience').map((item) => (
+                <li key={`exp-${item.id}`} role="option">
                   <button
                     type="button"
                     className="map-search-suggestion"
-                    onClick={() => handleSelectSuggestion(place)}
+                    onClick={() => goToSuggestion(item)}
                   >
-                    {place.display_name}
+                    <span className="map-search-suggestion-title">{item.label}</span>
+                    <span className="map-search-suggestion-detail">{item.detail}</span>
+                  </button>
+                </li>
+              ))}
+              {suggestions.some((s) => s.kind === 'place') && (
+                <li className="map-search-group-label" aria-hidden="true">Places</li>
+              )}
+              {suggestions.filter((s) => s.kind === 'place').map((item) => (
+                <li key={`place-${item.place_id}`} role="option">
+                  <button
+                    type="button"
+                    className="map-search-suggestion"
+                    onClick={() => goToSuggestion(item)}
+                  >
+                    {item.label}
                   </button>
                 </li>
               ))}
