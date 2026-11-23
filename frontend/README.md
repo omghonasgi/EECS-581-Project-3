@@ -14,10 +14,11 @@ Dev server runs on http://localhost:5173.
 
 ## Layout
 
-- `src/index.tsx` - entry point and routes (`/login`, `/map`, `/experience`).
+- `src/index.tsx` - entry point and routes (`/login`, `/map`, `/experience`, `/profile`).
 - `src/components/Login.tsx` - Adam Darst, Arin Shah (Requirement 1).
 - `src/components/Map.tsx` - Om Ghonasgi, Axel Bengoa, Jal Maru (Requirements 2, 3).
 - `src/components/Experience.tsx` - Jal Maru, Marcos Lepage, Axel Bengoa (Requirements 3, 4, 5, 6).
+- `src/components/Profile.tsx` - profile settings for the signed-in user.
 - `src/assets/geo/` - place the Natural Earth country GeoJSON and the US Census state GeoJSON here.
 
 ## Dependencies already installed

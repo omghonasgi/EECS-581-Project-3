@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from "react
 import Login from "./components/Login";
 import Map from "./components/Map";
 import Experience from "./components/Experience";
+import Profile from "./components/Profile";
 import { AuthProvider, useAuth } from "./lib/AuthProvider";
 import "./index.css";
 
@@ -13,7 +14,7 @@ import "./index.css";
 // The nav below is a temporary scaffold link bar so teammates can click into
 // each page while they build it. Remove once real navigation lands.
 function DevNav() {
-  const { session, signOut } = useAuth();
+  const { session, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const linkStyle = {
     color: "blue",
@@ -29,14 +30,17 @@ function DevNav() {
 
   return (
     <nav style={{ padding: "1rem" }}>
-      <Link to="/login" style={linkStyle}>Login</Link>
-      <Link to="/map" style={linkStyle}>Map</Link>
-      <Link to="/experience" style={linkStyle}>Experience</Link>
-      {session && (
-        <button type="button" onClick={handleLogout}>
-          Log out
-        </button>
-      )}
+      {!loading && (session ? (
+        <>
+          <Link to="/map" style={linkStyle}>Map</Link>
+          <Link to="/profile" style={linkStyle}>Profile</Link>
+          <button type="button" onClick={handleLogout}>
+            Log out
+          </button>
+        </>
+      ) : (
+        <Link to="/login" style={linkStyle}>Login</Link>
+      ))}
     </nav>
   );
 }
@@ -68,6 +72,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             element={
               <ProtectedRoute>
                 <Experience />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />
