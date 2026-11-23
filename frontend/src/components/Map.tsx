@@ -75,6 +75,7 @@ export default function Map() {
   // Rating filter (Om builds the UI, Axel wires it to the query): null = all
   const [minRating, setMinRating] = useState<number | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [deleteNotice, setDeleteNotice] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [searchParams, setSearchParams] = useState<{ q: string }>({ q: '' });
   const [searchTarget, setSearchTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
@@ -363,6 +364,7 @@ export default function Map() {
           </select>
         </label>
         {loadError && <p className="map-add-hint" style={{ color: '#b91c1c' }}>{loadError}</p>}
+        {deleteNotice && <p className="map-add-hint" role="status" style={{ color: '#b45309' }}>{deleteNotice}</p>}
       </div>
       
       <MapContainer
@@ -392,7 +394,15 @@ export default function Map() {
       </MapContainer>
 
       {selectedExperience && (
-        <ExperienceDetails experience={selectedExperience} onClose={() => setSelectedId(null)} />
+        <ExperienceDetails
+          experience={selectedExperience}
+          onClose={() => setSelectedId(null)}
+          onDelete={(deletedId, cleanupWarning) => {
+            setExperiences((current) => current.filter((experience) => experience.id !== deletedId));
+            setSelectedId(null);
+            setDeleteNotice(cleanupWarning ?? '');
+          }}
+        />
       )}
     </div>
   );

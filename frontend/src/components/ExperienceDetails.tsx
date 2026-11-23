@@ -10,18 +10,21 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Experience } from '../lib/experiences';
+import { deleteExperience, type Experience } from '../lib/experiences';
 
 type ExperienceDetailsProps = {
   experience: Experience;
   onClose: () => void;
+  onDelete: (experienceId: number, cleanupWarning?: string) => void;
 };
 
-export default function ExperienceDetails({ experience, onClose }: ExperienceDetailsProps) {
+export default function ExperienceDetails({ experience, onClose, onDelete }: ExperienceDetailsProps) {
   const navigate = useNavigate();
   // Photos arrive with signed Supabase Storage URLs (lib/experiences.ts)
   const urls = experience.photos.map((photo) => photo.url);
   const [viewing, setViewing] = useState<number | null>(null); // index of the full-size photo
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // Reset the viewer when a different experience is selected
   useEffect(() => setViewing(null), [experience.id]);
@@ -29,6 +32,7 @@ export default function ExperienceDetails({ experience, onClose }: ExperienceDet
   // Escape closes the photo viewer first, then the panel; arrows step through photos
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (deleting) return;
       if (e.key === 'Escape') {
         if (viewing !== null) setViewing(null);
         else onClose();
@@ -39,7 +43,23 @@ export default function ExperienceDetails({ experience, onClose }: ExperienceDet
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [viewing, urls.length, onClose]);
+  }, [viewing, urls.length, onClose, deleting]);
+
+  async function handleDelete() {
+    if (!window.confirm(`Permanently delete "${experience.title}" and its attached photos?`)) return;
+
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const result = await deleteExperience(experience);
+      onDelete(experience.id, result.cleanupWarning);
+    } catch (error) {
+      console.error('Deleting experience failed', error);
+      setDeleteError('Could not delete this experience. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const where = [experience.state, experience.country].filter(Boolean).join(', ');
   const rating = experience.rating || 0;
@@ -52,7 +72,7 @@ export default function ExperienceDetails({ experience, onClose }: ExperienceDet
             <h2 className="experience-details-title">{experience.title}</h2>
             {where && <p className="experience-details-where">{where}</p>}
           </div>
-          <button type="button" className="experience-details-close" onClick={onClose} aria-label="Close details">
+          <button type="button" className="experience-details-close" onClick={onClose} aria-label="Close details" disabled={deleting}>
             ×
           </button>
         </div>
@@ -104,11 +124,20 @@ export default function ExperienceDetails({ experience, onClose }: ExperienceDet
             type="button"
             className="secondary-button"
             onClick={() => navigate('/experience', { state: { experience } })}
+            disabled={deleting}
           >
             Edit
           </button>
-          {/* Req 9 (delete) button goes here */}
+          <button
+            type="button"
+            className="experience-details-delete"
+            onClick={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
         </div>
+        {deleteError && <p className="experience-details-delete-error" role="alert">{deleteError}</p>}
       </aside>
 
       {viewing !== null && urls[viewing] && (
