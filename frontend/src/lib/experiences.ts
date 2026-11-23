@@ -189,12 +189,32 @@ export async function saveExperience(input: SaveExperienceInput): Promise<number
 
 // Deletes the experience row (photo rows cascade) and its files in Storage.
 // For Adam's Req 9 delete flow.
-export async function deleteExperience(experience: Pick<Experience, 'id' | 'userId'>): Promise<void> {
+export async function deleteExperience(
+  experience: Pick<Experience, 'id' | 'userId'>
+): Promise<{ cleanupWarning?: string }> {
   const folder = `${experience.userId}/${experience.id}`;
-  const { data: files } = await supabase.storage.from(PHOTO_BUCKET).list(folder, { limit: 1000 });
+  const { data: files, error: listError } = await supabase.storage
+    .from(PHOTO_BUCKET)
+    .list(folder, { limit: 1000 });
+  if (listError) throw listError;
 
-  const { error } = await supabase.from('experiences').delete().eq('id', experience.id);
+  const { data: deleted, error } = await supabase
+    .from('experiences')
+    .delete()
+    .eq('id', experience.id)
+    .eq('user_id', experience.userId)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  if (!deleted) throw new Error('Experience not found or no longer available.');
 
-  await removeObjects((files ?? []).map((f) => `${folder}/${f.name}`));
+  const paths = (files ?? []).map((file) => `${folder}/${file.name}`);
+  if (paths.length > 0) {
+    const { error: removeError } = await supabase.storage.from(PHOTO_BUCKET).remove(paths);
+    if (removeError) {
+      console.error('Removing deleted experience photos failed', removeError);
+      return { cleanupWarning: 'The experience was deleted, but some photo files could not be removed.' };
+    }
+  }
+  return {};
 }
