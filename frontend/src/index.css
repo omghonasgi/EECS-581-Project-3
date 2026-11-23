@@ -514,3 +514,21 @@
   color: white;
   font-size: 0.9rem;
 }
+
+.map-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.map-filter select {
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+}
